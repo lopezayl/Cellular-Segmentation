@@ -1,36 +1,18 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
-
-/**
- *
- * @author lopezayl
- */
-
+import ij.IJ;
 import ij.ImagePlus;
 import ij.plugin.filter.PlugInFilter;
-import ij.process.ImageProcessor;
+import ij.*;
+import ij.process.*;
+import ij.gui.*;
+import ij.plugin.ChannelSplitter;
+import ij.plugin.filter.Analyzer;
 
-public class Cell_Seg extends java.awt.Frame implements ij.plugin.filter.PlugInFilter{
+public class Cell_Seg extends java.awt.Frame implements PlugInFilter{
+    ImagePlus imp;
 
-    /**
-     * Creates new form Cell_Seg
-     */
     public Cell_Seg() {
         initComponents();
         this.setVisible(true);
-        //this is what runs
-        //convert image to RGB stack, 3 slices
-        void convertToRGBStack();
-        //duplicate the image so that the original image is untouched
-        
-        //threshold the image to reduce noise
-        //use gaussian blur to further reduce noise
-        //find edges
-        //analyze particles to trace features
-        //extract x,y, and z coordinates from tracings
     }
 
     /**
@@ -41,10 +23,21 @@ public class Cell_Seg extends java.awt.Frame implements ij.plugin.filter.PlugInF
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
 
+        jToolBar1 = new javax.swing.JToolBar();
+        jMenuBar1 = new javax.swing.JMenuBar();
+        jMenu1 = new javax.swing.JMenu();
+        jMenu2 = new javax.swing.JMenu();
         jPanel1 = new javax.swing.JPanel();
         OK_jButton = new javax.swing.JButton();
-        jLabel1 = new javax.swing.JLabel();
-        Cancel = new javax.swing.JButton();
+        label1 = new java.awt.Label();
+
+        jToolBar1.setRollover(true);
+
+        jMenu1.setText("File");
+        jMenuBar1.add(jMenu1);
+
+        jMenu2.setText("Edit");
+        jMenuBar1.add(jMenu2);
 
         addWindowListener(new java.awt.event.WindowAdapter() {
             public void windowClosing(java.awt.event.WindowEvent evt) {
@@ -52,21 +45,18 @@ public class Cell_Seg extends java.awt.Frame implements ij.plugin.filter.PlugInF
             }
         });
 
+        jPanel1.setLayout(new java.awt.BorderLayout());
+
         OK_jButton.setText("OK");
         OK_jButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 OK_jButtonActionPerformed(evt);
             }
         });
-        jPanel1.add(OK_jButton);
+        jPanel1.add(OK_jButton, java.awt.BorderLayout.PAGE_END);
 
-        jLabel1.setText("Press OK to trace the soma.");
-        jPanel1.add(jLabel1);
-
-        Cancel.setText("Cancel");
-        Cancel.setActionCommand("Cancel");
-        jPanel1.add(Cancel);
-        Cancel.getAccessibleContext().setAccessibleName("Cancel");
+        label1.setText("The tracing is now complete.");
+        jPanel1.add(label1, java.awt.BorderLayout.CENTER);
 
         add(jPanel1, java.awt.BorderLayout.CENTER);
 
@@ -80,38 +70,139 @@ public class Cell_Seg extends java.awt.Frame implements ij.plugin.filter.PlugInF
 
     private void OK_jButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_OK_jButtonActionPerformed
         //call function Cell_Seg
-
-        
+        this.dispose();
     }//GEN-LAST:event_OK_jButtonActionPerformed
     
-    public int setup(java.lang.String arg, ImagePlus ermergerd)
-    {
-        m_arg = arg;
-        m_pretty = ermergerd;
-        return DOES_8C + DONE;
+    public int setup(String arg, ImagePlus imp) {
+        if(arg.equals("about")){
+            showAbout();
+            return DONE;
+        }
+        this.imp = imp;
+        
+        //returns what image types are acceptable
+        return DOES_ALL;
     }
     
-    
+    void showAbout(){
+        IJ.showMessage("About Cell_Seg", "This plugin filter traces soma when given\n" + "one image of neurons.");
+    }
     
     /**
+     * @param ip
      * @param args the command line arguments
      */
-    public static void main(String args[]) {
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new Cell_Seg().setVisible(true);
+    public void run(ImageProcessor ip) {
+        //filter will use this method to process the image
+        //HERE is where you put things like ip.invert(); to invert, etc...
+        
+        //save dimensions of the original image to local variables
+        int w = ip.getWidth();
+        int h = ip.getHeight();
+        
+        //create new RGB image of same size: one slice, black
+        ImagePlus edited = NewImage.createRGBImage("edited",w,h,3, NewImage.FILL_BLACK);
+        //get the new image's processor
+        ImageProcessor edit_ip = edited.getProcessor();
+        
+        //copy image from the original ImageProcessor to new image
+        edit_ip.copyBits(ip, 0, 0, Blitter.COPY);
+        
+        /*convert image to RGB stack, 3 slices*/
+        //create new instance of ImageConverter
+        ImageConverter stackme = new ImageConverter(edited);
+        //convert image to RGB stack
+        stackme.convertToRGBStack();        //For some reason, this isn't actually converting it to a stack
+        
+        //to threshold 3 layer RGB stack, split channels first
+        /*METHOD 1: convert to RGB stack, then split stack */
+        //ChannelSplitter.splitRGB(edited, false);  //edited needs to be converted to a stack for this to work
+        
+        /*METHOD 2: split RGB image*/
+        //ChannelSplitter.split(edited);  //splits the RGB image
+        
+        /*METHOD 3: get individual channels, loop through all 3 channels*/
+        for(int c = 1; c < 4; c++){
+        ImageStack split = ChannelSplitter.getChannel(edited,c); //returns layer c of the imagestack edited
+                    /*Repeat the following process for all three layers*/
+        
+            ImageProcessor layer_ip = split.getProcessor(1);
+
+            //calculate threshold value, 92%
+            int t = threshold(h,w,93,layer_ip);
+
+            //threshold the image to reduce noise
+            layer_ip.threshold(t);
+
+            //use gaussian blur to further reduce noise
+            layer_ip.blurGaussian(2);   //start at 1, tweak up until 5
+            //sigma is the std dev. of the gaussian blur, in pixels
+
+            //calculate threshold value, 92%
+            t = threshold(h,w,93,layer_ip);
+            //threshold the image to reduce noise
+            layer_ip.threshold(t);
+
+            //find edges
+            //public void findEdges()
+            //constructor is ImageProcessor()
+            //ij.process.ImageProcessor
+            layer_ip.findEdges();
+
+            //analyze particles to trace features
+            //analyze>analyze particles
+            /*
+            ResultsTable results = Analyzer.getResultsTable();
+            ij.plugin.filter.ParticleAnalyzer(SHOW_OUTLINES, ADD_TO_OVERLAY, results, 5.0, 10000.0, .01, 1.0);*/
+            Analyzer a = new ij.plugin.filter.Analyzer(edited);
+            Analyzer.getMeasurements();
+            //a.displayResults();
+            /*end process*/
             }
-        });
+        
+        //extract x,y, and z coordinates from tracings
+        //analyze>tools>save xy coordinates
+        
+        //open an ImageWindow to display edited picture
+        edited.show();
+        //force pixel array to be read and image to be updated
+        edited.updateAndDraw();
+        
     }
-
-
+    
+    /**
+     * Calculates threshold value to threshold
+     * @param h height of the image
+     * @param w width of the image
+     * @param p percentage of image's intensity that will be thresholded
+     * @param ip ImageProcessor corresponding to the image
+     * @return threshold value
+     */
+    public int threshold(int h, int w, double p, ImageProcessor ip){  //how to pass only one layer at a time? for RGB, just make 3d array
+        int[]H = new int[256];  //histogram array, does not work if not a grayscale image
+        for(int v = 0; v < h; v++){
+            for(int u = 0; u < w; u++){
+                int i = ip.getPixel(u,v);
+                H[i] = H[i] + 1;
+            }
+        }
+        int sum = 0;
+        int t=0;
+        double q= (p/100)*h*w;
+        for(int i = 0; sum < q; i++){
+            sum = sum+H[i];
+            t=i;
+        }
+        return t;
+    }
+       
     // Variables declaration - do not modify//GEN-BEGIN:variables
-    private javax.swing.JButton Cancel;
     private javax.swing.JButton OK_jButton;
-    private javax.swing.JLabel jLabel1;
+    private javax.swing.JMenu jMenu1;
+    private javax.swing.JMenu jMenu2;
+    private javax.swing.JMenuBar jMenuBar1;
     private javax.swing.JPanel jPanel1;
+    private javax.swing.JToolBar jToolBar1;
+    private java.awt.Label label1;
     // End of variables declaration//GEN-END:variables
-    // just kidding. more variables!
-    private ImagePlus m_pretty;
-    private java.lang.String m_arg;
 }
